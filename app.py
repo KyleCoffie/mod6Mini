@@ -2,8 +2,8 @@ from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_marshmallow import Marshmallow
 from secret import my_password
-from marshmallow import fields, ValidationError,validate
-
+from marshmallow import fields, ValidationError, validate
+import math
 
 
 app = Flask(__name__)
@@ -12,7 +12,7 @@ db = SQLAlchemy(app)
 ma = Marshmallow(app)
 
 
-#create Schemas for customers Accounts and products
+#create Schemas for customers Accounts products orders
 class CustomerSchema(ma.Schema): 
     name = fields.String(required=True)
     email = fields.Email(required=True) 
@@ -36,12 +36,22 @@ class ProductSchema(ma.Schema):
         fields = ("product_id", "name", "price")
 
 class OrderSchema(ma.Schema):
+    customer_id = fields.Int(required=True)
     order_date = fields.Date(required=True)
     expected_delivery_date = fields.Date(required=True)
-    
-    class Meta:
-        fields = ("order_id", "order_date", "expected_delivery_date")
+    product_id = fields.Int(required=True)  
+    quantity = fields.Int(required=True)   
 
+    class Meta:
+        fields = ("customer_id", "order_id", "order_date", "expected_delivery_date", "product_id", "quantity")
+        
+# class OrderItemSchema(ma.Schema):
+#     product_id = fields.Int(required=True)
+#     quantity = fields.Int(required =True)
+    
+#     class Meta:
+#         fields =("order_item_id", "order_id", "product_id", "quantity")
+        
 customer_schema = CustomerSchema() 
 customers_schema = CustomerSchema(many=True)
 
@@ -54,9 +64,11 @@ products_schema =ProductSchema(many=True)
 order_schema =OrderSchema()
 orders_schema=OrderSchema(many=True)
 
+# order_item_schema = OrderItemSchema()
+# order_items_schema = OrderItemSchema(many=True)
 #create tables and columns 
 class Customer(db.Model):
-    customer_id = db.Column(db.Integer,primary_key=True)
+    customer_id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(250), nullable=False)
     email = db.Column(db.String(250), nullable=False)
     phone = db.Column(db.String(20), nullable=False)
@@ -73,22 +85,41 @@ class Product(db.Model):
     product_id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(250), nullable=False)
     price = db.Column(db.Float, nullable=False)
+   
+   
+   
+class Order(db.Model): 
+
+    order_id = db.Column(db.Integer, primary_key=True) 
+    customer_id = db.Column(db.Integer, db.ForeignKey('customer.customer_id')) 
+    product_id = db.Column(db.Integer, db.ForeignKey('product.product_id'), nullable=False) 
+    quantity = db.Column(db.Integer, nullable=False) 
+    order_date = db.Column(db.Date, nullable=False) 
+    expected_delivery_date = db.Column(db.Date) 
+    # customer = db.relationship('Customer', backref='orders') 
+    # product = db.relationship('Product', lazy=True)
     
-class Order(db.Model):
-    order_id = db.Column(db.Integer, primary_key=True)
-    customer_id = db.Column(db.Integer, db.ForeignKey('customer.customer_id'))
-    order_date = db.Column(db.Date, nullable=False)
-    expected_delevery_date = db.Column(db.Date)
-    order_items = db.relationship('OrderItem', backref='order')
+   
     
-class OrderItem(db.Model):
-    order_item_id = db.Column(db.Integer, primary_key=True)
-    order_id = db.Column(db.Integer, db.ForeignKey('order.order_id'))
-    product_id = db.Column(db.Integer, db.ForeignKey('product.product_id'))
-    quantity =  db.Column(db.Integer, nullable=False)
+# class Order(db.Model):
+#     customer_id = db.Column(db.Integer, db.ForeignKey('customer.customer_id'))
+#     order_date = db.Column(db.Date, nullable=False)
+#     expected_delivery_date = db.Column(db.Date)
+#     order_id = db.Column(db.Integer, primary_key=True)
+#     # quantity =  db.Column(db.Integer, nullable=False)
+#     # product_id = db.Column(db.Integer, db.ForeignKey('product.product_id'))
+#     order_items = db.relationship('Order', backref='order', lazy="joined")
     
+#     quantity = db.Column(db.Integer, nullable=False)
+#     product= db.relationship('Product', lazy=True)
     
-@app.route('/customer', methods=['POST'])
+# class OrderItem(db.Model):#introducting an orderitem so that we can iterate over the class Order
+#     order_item_id = db.Column(db.Integer, primary_key=True)
+#     order_id = db.Column(db.Integer, db.ForeignKey('order.order_id'),nullable=False)
+#     # order_items = db.relationship('OrderItem', backref='order')
+#     product_id = db.Column(db.Integer, db.ForeignKey('product.product_id'), nullable=False)
+    
+# @app.route('/customer', methods=['POST'])
 def add_customer():
     try:
         customer_data = customer_schema.load(request.json)
@@ -206,10 +237,17 @@ def place_order():
         order_data = order_schema.load(request.json)
     except ValidationError as err:
         return jsonify(err.messages),400
-    new_order = Order(customer_id=order_data['customer_id'], order_date=order_data['order_date'], product_id=order_data['product_id'], quantity, total,expected_delivery_date=order_data['expected_deliver_date'])
+    new_order = Order(
+        customer_id=order_data['customer_id'],
+        order_date=order_data['order_date'],
+        expected_delivery_date=order_data['expected_delivery_date'],
+        product_id=order_data['product_id'],
+        quantity=order_data['quantity']
+    )
     db.session.add(new_order)
     db.session.commit()
-    return jsonify({"message":"Order place successfully"})
+
+    return jsonify({"message":"Order placed successfully"})
 
 @app.route('/order/<int:order_id>', methods=['GET'])
 def get_order(order_id):
@@ -223,14 +261,16 @@ def track_order(order_id):
 
 @app.route('/customer/<int:customer_id>/orders', methods=['GET'])
 def get_order_history(customer_id):
-    customer =Customer.query.get_or_404(customer_id)
+    # customer =Customer.query.get_or_404(customer_id)
     orders = Order.query.filter_by(customer_id=customer_id).all()
-    return orders_schema.jsonify(customer, orders)
+    return orders_schema.jsonify(orders)
 
 @app.route('/order/<int:order_id>/total', methods=['GET'])
 def calculate_order_total(order_id):
+    #using realtionship to calulate the total... item was created 
     order = Order.query.get_or_404(order_id)
-    total_price = sum(item.product.price * item.quantity for item in order.order_items)
+    product = Product.query.get_or_404(order.product_id)
+    total_price = product.price * order.quantity
     return jsonify({"total_price":total_price}),200
     
     
