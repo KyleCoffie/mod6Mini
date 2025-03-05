@@ -4,12 +4,14 @@ from flask_marshmallow import Marshmallow
 from secret import my_password
 from marshmallow import fields, ValidationError, validate
 import math
+from flask_cors import CORS
 
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = f'mysql+mysqlconnector://root:{my_password}@localhost/ecommerce_db'
 db = SQLAlchemy(app)
 ma = Marshmallow(app)
+CORS(app, resources={r"/*": {"origins": "*"}}) 
 
 
 #create Schemas for customers Accounts products orders
@@ -119,7 +121,8 @@ class Order(db.Model):
 #     # order_items = db.relationship('OrderItem', backref='order')
 #     product_id = db.Column(db.Integer, db.ForeignKey('product.product_id'), nullable=False)
     
-# @app.route('/customer', methods=['POST'])
+@app.route('/customer', methods=['POST'])
+
 def add_customer():
     try:
         customer_data = customer_schema.load(request.json)
@@ -129,6 +132,11 @@ def add_customer():
     db.session.add(new_customer)
     db.session.commit()
     return jsonify({"message": "New customer added successfully"}),201
+
+@app.route('/customer', methods=['GET'])
+def list_customers():
+    customers = Customer.query.all()
+    return customers_schema.jsonify(customers)
 
 @app.route('/customer/<int:customer_id>', methods=['GET'])
 def get_customer(customer_id):
@@ -219,12 +227,17 @@ def update_product(product_id):
     db.session.commit()
     return jsonify({"message": "Product details have been updated successfully"}),200
 
-@app.route('/product/<int:product_id>', methods = ['DELETE'])
-def delete_product(product_id):
-    product = Product.query.get_or_404(product_id)
-    db.session.delete(product)
-    db.session.commit()
-    return jsonify({"message":"Product removed successfully"}),200
+@app.route('/product/<int:id>', methods=['DELETE'])
+def delete_product(id):
+    # Your delete logic here, for example:
+    product = Product.query.get(id)
+    if product:
+        db.session.delete(product)
+        db.session.commit()
+        return '', 204  # Success, No Content
+    else:
+        return '', 404  # Not Found
+
 
 @app.route('/products', methods=['GET'])
 def list_products():
