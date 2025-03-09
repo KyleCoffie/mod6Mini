@@ -229,7 +229,6 @@ def update_product(product_id):
 
 @app.route('/product/<int:id>', methods=['DELETE'])
 def delete_product(id):
-    # Your delete logic here, for example:
     product = Product.query.get(id)
     if product:
         db.session.delete(product)
@@ -262,6 +261,26 @@ def place_order():
 
     return jsonify({"message":"Order placed successfully"})
 
+@app.route('/order/<int:order_id>', methods=['PUT'])
+def update_order(order_id):
+    order = Order.query.get_or_404(order_id)
+    try:
+        order_data = order_schema.load(request.json)
+    except ValidationError as err:
+        return jsonify(err.messages),400
+    order.customer_id = order_data['customer_id']
+    order.order_date = order_data['order_date']
+    order.expected_delivery_date = order_data['expected_delivery_date']
+    order.product_id = order_data['product_id']
+    order.quantity = order_data['quantity']
+    db.session.commit()
+    return jsonify({"message": "Order details have been updated successfully"}),200
+
+@app.route('/orders', methods=['GET'])
+def get_orders():
+    orders = Order.query.all()
+    return orders_schema.jsonify(orders)
+
 @app.route('/order/<int:order_id>', methods=['GET'])
 def get_order(order_id):
     order= Order.query.get_or_404(order_id)
@@ -285,6 +304,16 @@ def calculate_order_total(order_id):
     product = Product.query.get_or_404(order.product_id)
     total_price = product.price * order.quantity
     return jsonify({"total_price":total_price}),200
+
+@app.route('/order/<int:order_id>', methods=['DELETE'])
+def delete_order(order_id):
+    order = Order.query.get(order_id)
+    if order:
+        db.session.delete(order)
+        db.session.commit()
+        return '', 204  # Success, No Content
+    else:
+        return '', 404  # Not Found
     
     
 with app.app_context():
